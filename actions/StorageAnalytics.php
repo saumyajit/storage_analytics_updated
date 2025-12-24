@@ -41,6 +41,40 @@ class StorageAnalytics extends CController {
     }
 
     protected function doAction(): void {
+
+		// Check for export request
+		$export = $this->getInput('export', '');
+		
+		if ($export) {
+			// Get data (same as before)
+			$filter = $this->getInputFilter();
+			$storageData = $this->getDiskDataWithFilters($filter);
+			$enhancedData = $this->calculatePredictions($storageData, $filter);
+			$summary = $this->calculateEnhancedSummary($enhancedData, $filter);
+			
+			// Create export controller
+			$exportController = new StorageAnalyticsExport();
+			
+			switch ($export) {
+				case 'csv':
+					$exportController->exportCSV($enhancedData, $summary, $filter);
+					break;
+					
+				case 'html':
+					$exportController->exportHTML($enhancedData, $summary, $filter);
+					break;
+					
+				case 'json':
+					$exportController->exportJSON($enhancedData, $summary, $filter);
+					break;
+					
+				case 'pdf':
+					// PDF export would require additional library
+					// $exportController->exportPDF($enhancedData, $summary, $filter);
+					break;
+			}
+		}
+		
         // Get filter values with defaults
         $filter = [
             'hostids'           => $this->getInput('hostids', []),
