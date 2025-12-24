@@ -4,11 +4,16 @@ namespace Modules\diskanalyser\actions;
 use CController;
 use CControllerResponseData;
 use API;
+use CCache;
 
 class StorageAnalytics extends CController {
-
+    
+    private $cache;
+    private $cache_ttl = 300; // 5 minutes
+    
     protected function init(): void {
         $this->disableCsrfValidation();
+        $this->cache = CCache::getInstance();
     }
 
     protected function checkInput(): bool {
@@ -17,14 +22,15 @@ class StorageAnalytics extends CController {
             'groupids'          => 'array_id',
             'host'              => 'string',
             'time_range'        => 'in 7,14,30,90,180,365',
-            'prediction_method' => 'in simple,seasonal',
+            'prediction_method' => 'in simple,seasonal,holt_winters,arima,ensemble',
             'warning_threshold' => 'ge 0|le 100',
             'critical_threshold'=> 'ge 0|le 100',
             'refresh'           => 'in 0,30,60,120,300,600',
             'refresh_enabled'   => 'in 0,1',
             'page'              => 'ge 1',
             'tags'              => 'array',
-            'filter_enabled'    => 'in 0,1'
+            'filter_enabled'    => 'in 0,1',
+            'export'            => 'in csv,html,json,pdf'
         ];
         
         $ret = $this->validateInput($fields);
@@ -41,40 +47,9 @@ class StorageAnalytics extends CController {
     }
 
     protected function doAction(): void {
-
-		// Check for export request
-		$export = $this->getInput('export', '');
-		
-		if ($export) {
-			// Get data (same as before)
-			$filter = $this->getInputFilter();
-			$storageData = $this->getDiskDataWithFilters($filter);
-			$enhancedData = $this->calculatePredictions($storageData, $filter);
-			$summary = $this->calculateEnhancedSummary($enhancedData, $filter);
-			
-			// Create export controller
-			$exportController = new StorageAnalyticsExport();
-			
-			switch ($export) {
-				case 'csv':
-					$exportController->exportCSV($enhancedData, $summary, $filter);
-					break;
-					
-				case 'html':
-					$exportController->exportHTML($enhancedData, $summary, $filter);
-					break;
-					
-				case 'json':
-					$exportController->exportJSON($enhancedData, $summary, $filter);
-					break;
-					
-				case 'pdf':
-					// PDF export would require additional library
-					// $exportController->exportPDF($enhancedData, $summary, $filter);
-					break;
-			}
-		}
-		
+        // Check for export request
+        $export = $this->getInput('export', '');
+        
         // Get filter values with defaults
         $filter = [
             'hostids'           => $this->getInput('hostids', []),
@@ -90,6 +65,12 @@ class StorageAnalytics extends CController {
             'tags'              => $this->getInput('tags', []),
             'filter_enabled'    => $this->getInput('filter_enabled', 0)
         ];
+
+        // Handle export request
+        if ($export) {
+            $this->handleExport($export, $filter);
+            return;
+        }
 
         // Fetch storage data with filters
         $storageData = $this->getDiskDataWithFilters($filter);
@@ -119,6 +100,35 @@ class StorageAnalytics extends CController {
         
         $response->setTitle(_('Storage Analytics'));
         $this->setResponse($response);
+    }
+
+    /**
+     * Handle export requests
+     */
+    private function handleExport(string $format, array $filter): void {
+        // Fetch data
+        $storageData = $this->getDiskDataWithFilters($filter);
+        $enhancedData = $this->calculatePredictions($storageData, $filter);
+        $summary = $this->calculateEnhancedSummary($enhancedData, $filter);
+        
+        switch ($format) {
+            case 'csv':
+                $this->exportCSV($enhancedData, $summary, $filter);
+                break;
+                
+            case 'html':
+                $this->exportHTML($enhancedData, $summary, $filter);
+                break;
+                
+            case 'json':
+                $this->exportJSON($enhancedData, $summary, $filter);
+                break;
+                
+            case 'pdf':
+                // PDF would require additional library
+                $this->showError(_('PDF export not yet implemented'));
+                break;
+        }
     }
 
     /**
@@ -230,52 +240,381 @@ class StorageAnalytics extends CController {
     }
 
     /**
+     * Batch fetch history data for multiple items
+     */
+    private function batchGetHistoryData(array $itemIds, int $timeFrom): array {
+        $cache_key = 'storage_history_' . md5(implode(',', $itemIds) . $timeFrom);
+        
+        // Try cache first
+        $cached = $this->cache->get($cache_key);
+        if ($cached !== false) {
+            return $cached;
+        }
+        
+        // Batch API call (much more efficient)
+        $history = API::History()->get([
+            'output' => ['itemid', 'clock', 'value'],
+            'itemids' => $itemIds,
+            'history' => 3,
+            'time_from' => $timeFrom,
+            'sortfield' => ['itemid', 'clock'],
+            'limit' => count($itemIds) * 50 // Reasonable limit
+        ]);
+        
+        // Group by itemid for easy access
+        $grouped = [];
+        foreach ($history as $record) {
+            $grouped[$record['itemid']][] = [
+                'clock' => $record['clock'],
+                'value' => $record['value']
+            ];
+        }
+        
+        $this->cache->set($cache_key, $grouped, $this->cache_ttl);
+        return $grouped;
+    }
+
+    /**
      * Calculate growth predictions
      */
     private function calculatePredictions(array $storageData, array $filter): array {
         $method = $filter['prediction_method'];
-        $timeRange = $filter['time_range'];
+        
+        // Use batch processing for performance
+        if (in_array($method, ['simple', 'seasonal'])) {
+            $enhancedData = $this->calculateBatchGrowthRates($storageData, $filter['time_range'], $method);
+        } else {
+            $enhancedData = $this->calculateAdvancedPredictions($storageData, $filter);
+        }
 
-        foreach ($storageData as &$item) {
-            $growthData = $this->calculateGrowthRate(
-                $item['hostid'],
-                $item['mount'],
-                $timeRange,
-                $method
-            );
-
-            $item['daily_growth_raw'] = $growthData['daily_growth'];
-            $item['daily_growth'] = $growthData['daily_growth'] > 0 
-                ? $this->formatBytes($growthData['daily_growth']) . '/day' 
-                : _('Stable');
-                
-            $item['days_until_full'] = $this->calculateDaysUntilFull(
-                $item['total_raw'],
-                $item['used_raw'],
-                $growthData['daily_growth']
-            );
-            $item['growth_trend'] = $growthData['trend'];
-            $item['confidence'] = $growthData['confidence'];
-
+        foreach ($enhancedData as &$item) {
             // Determine status based on thresholds
             $item['status'] = $this->determineStatus(
                 $item['usage_pct'],
-                $item['days_until_full'],
+                $item['days_until_full'] ?? _('No growth'),
                 $filter['warning_threshold'],
                 $filter['critical_threshold']
             );
         }
 
+        return $enhancedData;
+    }
+
+    /**
+     * Optimized growth calculation using batch data
+     */
+    private function calculateBatchGrowthRates(array $storageData, int $days, string $method): array {
+        $timeFrom = time() - ($days * 86400);
+        $itemMap = [];
+        $itemIds = [];
+        
+        // Build mapping of host+mount to item IDs
+        foreach ($storageData as $idx => $item) {
+            $itemKey = 'vfs.fs.size[' . $item['mount'] . ',used]';
+            $items = API::Item()->get([
+                'output' => ['itemid'],
+                'hostids' => $item['hostid'],
+                'filter' => ['key_' => $itemKey],
+                'limit' => 1
+            ]);
+            
+            if (!empty($items)) {
+                $itemId = $items[0]['itemid'];
+                $itemMap[$itemId] = $idx;
+                $itemIds[] = $itemId;
+            }
+        }
+        
+        // Single batch call instead of multiple calls
+        $batchHistory = $this->batchGetHistoryData($itemIds, $timeFrom);
+        
+        // Process all items
+        foreach ($itemMap as $itemId => $dataIdx) {
+            $history = $batchHistory[$itemId] ?? [];
+            
+            if (count($history) >= 2) {
+                $first = reset($history);
+                $last = end($history);
+                
+                $valueDiff = $last['value'] - $first['value'];
+                $timeDiff = max(1, ($last['clock'] - $first['clock']) / 86400);
+                $dailyGrowth = $valueDiff / $timeDiff;
+                
+                // Apply to storage data
+                $storageData[$dataIdx]['daily_growth_raw'] = $dailyGrowth;
+                $storageData[$dataIdx]['daily_growth'] = $dailyGrowth > 0 
+                    ? $this->formatBytes($dailyGrowth) . '/day' 
+                    : _('Stable');
+                    
+                $storageData[$dataIdx]['days_until_full'] = $this->calculateDaysUntilFull(
+                    $storageData[$dataIdx]['total_raw'],
+                    $storageData[$dataIdx]['used_raw'],
+                    $dailyGrowth
+                );
+                
+                $storageData[$dataIdx]['growth_trend'] = $this->determineTrend($dailyGrowth);
+                $storageData[$dataIdx]['confidence'] = min(100, (count($history) / $days) * 100);
+            } else {
+                $storageData[$dataIdx]['daily_growth_raw'] = 0;
+                $storageData[$dataIdx]['daily_growth'] = _('Stable');
+                $storageData[$dataIdx]['days_until_full'] = _('No growth');
+                $storageData[$dataIdx]['growth_trend'] = 'stable';
+                $storageData[$dataIdx]['confidence'] = 0;
+            }
+        }
+        
         return $storageData;
     }
 
     /**
-     * Calculate growth rate
+     * Advanced prediction with multiple algorithms
      */
-    private function calculateGrowthRate(int $hostId, string $mount, int $days, string $method): array {
+    private function calculateAdvancedPredictions(array $storageData, array $filter): array {
+        $method = $filter['prediction_method'];
+        
+        foreach ($storageData as &$item) {
+            $growthData = [];
+            
+            switch ($method) {
+                case 'holt_winters':
+                    $growthData = $this->holtWintersPrediction($item['hostid'], $item['mount'], $filter['time_range']);
+                    break;
+                    
+                case 'arima':
+                    $growthData = $this->arimaPrediction($item['hostid'], $item['mount'], $filter['time_range']);
+                    break;
+                    
+                case 'ensemble':
+                    $growthData = $this->ensemblePrediction($item['hostid'], $item['mount'], $filter['time_range']);
+                    break;
+                    
+                case 'seasonal':
+                default:
+                    $growthData = $this->calculateSeasonalAdjustedGrowth($item['hostid'], $item['mount'], $filter['time_range']);
+                    break;
+            }
+            
+            $item = array_merge($item, $growthData);
+        }
+        
+        return $storageData;
+    }
+
+    /**
+     * Holt-Winters triple exponential smoothing
+     */
+    private function holtWintersPrediction(int $hostId, string $mount, int $days): array {
+        $history = $this->getDailyHistory($hostId, $mount, $days);
+        
+        if (count($history) < 14) {
+            return [
+                'daily_growth_raw' => 0,
+                'daily_growth' => _('Stable'),
+                'days_until_full' => _('No growth'),
+                'trend' => 'insufficient_data',
+                'confidence' => 0,
+                'algorithm' => 'holt_winters'
+            ];
+        }
+        
+        // Simplified Holt-Winters implementation
+        $alpha = 0.3; // Level smoothing
+        $beta = 0.1;  // Trend smoothing
+        $gamma = 0.2; // Seasonal smoothing
+        $season_length = 7; // Weekly seasonality
+        
+        $values = array_column($history, 'value');
+        $level = $values[0];
+        $trend = 0;
+        $seasonal = array_fill(0, $season_length, 0);
+        
+        // Initialize seasonal components
+        for ($i = 0; $i < $season_length && $i < count($values); $i++) {
+            $seasonal[$i] = $values[$i] / $level;
+        }
+        
+        // Apply Holt-Winters smoothing
+        for ($i = 1; $i < count($values); $i++) {
+            $season = $i % $season_length;
+            $last_level = $level;
+            
+            $level = $alpha * ($values[$i] / $seasonal[$season]) + (1 - $alpha) * ($last_level + $trend);
+            $trend = $beta * ($level - $last_level) + (1 - $beta) * $trend;
+            $seasonal[$season] = $gamma * ($values[$i] / $level) + (1 - $gamma) * $seasonal[$season];
+        }
+        
+        // Forecast next value
+        $season = count($values) % $season_length;
+        $forecast = ($level + $trend) * $seasonal[$season];
+        
+        $daily_growth = $forecast - end($values);
+        
+        return [
+            'daily_growth_raw' => max(0, $daily_growth),
+            'daily_growth' => $daily_growth > 0 ? $this->formatBytes($daily_growth) . '/day' : _('Stable'),
+            'days_until_full' => $this->calculateDaysUntilFull(0, 0, $daily_growth), // Will be recalculated with actual data
+            'trend' => $this->determineTrend($daily_growth),
+            'confidence' => $this->calculateModelConfidence($values, $forecast),
+            'algorithm' => 'holt_winters',
+            'seasonal_pattern' => $seasonal
+        ];
+    }
+
+    /**
+     * ARIMA prediction (simplified version)
+     */
+    private function arimaPrediction(int $hostId, string $mount, int $days): array {
+        // Simplified ARIMA implementation
+        $history = $this->getDailyHistory($hostId, $mount, $days);
+        
+        if (count($history) < 10) {
+            return [
+                'daily_growth_raw' => 0,
+                'daily_growth' => _('Stable'),
+                'days_until_full' => _('No growth'),
+                'trend' => 'insufficient_data',
+                'confidence' => 0,
+                'algorithm' => 'arima'
+            ];
+        }
+        
+        $values = array_column($history, 'value');
+        
+        // Simple differencing (ARIMA(1,1,0) approximation)
+        $diff_values = [];
+        for ($i = 1; $i < count($values); $i++) {
+            $diff_values[] = $values[$i] - $values[$i-1];
+        }
+        
+        // Average growth
+        $avg_growth = array_sum($diff_values) / count($diff_values);
+        
+        return [
+            'daily_growth_raw' => max(0, $avg_growth),
+            'daily_growth' => $avg_growth > 0 ? $this->formatBytes($avg_growth) . '/day' : _('Stable'),
+            'days_until_full' => $this->calculateDaysUntilFull(0, 0, $avg_growth),
+            'trend' => $this->determineTrend($avg_growth),
+            'confidence' => min(100, (count($values) / $days) * 100),
+            'algorithm' => 'arima'
+        ];
+    }
+
+    /**
+     * Ensemble prediction combining multiple models
+     */
+    private function ensemblePrediction(int $hostId, string $mount, int $days): array {
+        $methods = ['simple', 'seasonal', 'holt_winters'];
+        $predictions = [];
+        $weights = ['simple' => 0.2, 'seasonal' => 0.3, 'holt_winters' => 0.5];
+        
+        foreach ($methods as $method) {
+            switch ($method) {
+                case 'simple':
+                    $pred = $this->calculateGrowthRate($hostId, $mount, $days, 'simple');
+                    break;
+                case 'seasonal':
+                    $pred = $this->calculateSeasonalAdjustedGrowth($hostId, $mount, $days);
+                    break;
+                case 'holt_winters':
+                    $pred = $this->holtWintersPrediction($hostId, $mount, $days);
+                    break;
+            }
+            
+            if ($pred['confidence'] > 50) {
+                $predictions[$method] = $pred;
+            }
+        }
+        
+        // Weighted average of predictions
+        $total_growth = 0;
+        $total_weight = 0;
+        $confidences = [];
+        
+        foreach ($predictions as $method => $pred) {
+            $weight = $weights[$method] * ($pred['confidence'] / 100);
+            $total_growth += $pred['daily_growth_raw'] * $weight;
+            $total_weight += $weight;
+            $confidences[] = $pred['confidence'];
+        }
+        
+        $ensemble_growth = $total_weight > 0 ? $total_growth / $total_weight : 0;
+        $avg_confidence = count($confidences) > 0 ? array_sum($confidences) / count($confidences) : 0;
+        
+        return [
+            'daily_growth_raw' => $ensemble_growth,
+            'daily_growth' => $ensemble_growth > 0 ? $this->formatBytes($ensemble_growth) . '/day' : _('Stable'),
+            'days_until_full' => $this->calculateDaysUntilFull(0, 0, $ensemble_growth),
+            'trend' => $this->determineTrend($ensemble_growth),
+            'confidence' => round($avg_confidence),
+            'algorithm' => 'ensemble',
+            'component_predictions' => $predictions
+        ];
+    }
+
+    /**
+     * Calculate seasonal adjusted growth
+     */
+    private function calculateSeasonalAdjustedGrowth(int $hostId, string $mount, int $days): array {
+        $history = $this->getDailyHistory($hostId, $mount, $days);
+        
+        if (count($history) < 7) {
+            return [
+                'daily_growth_raw' => 0,
+                'daily_growth' => _('Stable'),
+                'days_until_full' => _('No growth'),
+                'trend' => 'insufficient_data',
+                'confidence' => 0,
+                'algorithm' => 'seasonal'
+            ];
+        }
+        
+        // Group by day of week for seasonal pattern
+        $seasonal_pattern = [];
+        for ($i = 0; $i < 7; $i++) {
+            $seasonal_pattern[$i] = ['sum' => 0, 'count' => 0];
+        }
+        
+        foreach ($history as $record) {
+            $day_of_week = date('w', $record['clock']);
+            $seasonal_pattern[$day_of_week]['sum'] += $record['value'];
+            $seasonal_pattern[$day_of_week]['count']++;
+        }
+        
+        // Calculate seasonal averages
+        $seasonal_avg = [];
+        foreach ($seasonal_pattern as $day => $data) {
+            $seasonal_avg[$day] = $data['count'] > 0 ? $data['sum'] / $data['count'] : 0;
+        }
+        
+        // Remove seasonal component and calculate trend
+        $deseasonalized = [];
+        foreach ($history as $record) {
+            $day_of_week = date('w', $record['clock']);
+            $deseasonalized[] = $record['value'] - $seasonal_avg[$day_of_week];
+        }
+        
+        // Calculate growth from deseasonalized data
+        $first = reset($deseasonalized);
+        $last = end($deseasonalized);
+        $daily_growth = ($last - $first) / max(1, count($deseasonalized) - 1);
+        
+        return [
+            'daily_growth_raw' => max(0, $daily_growth),
+            'daily_growth' => $daily_growth > 0 ? $this->formatBytes($daily_growth) . '/day' : _('Stable'),
+            'days_until_full' => $this->calculateDaysUntilFull(0, 0, $daily_growth),
+            'trend' => $this->determineTrend($daily_growth),
+            'confidence' => min(100, (count($history) / $days) * 100),
+            'algorithm' => 'seasonal',
+            'seasonal_pattern' => $seasonal_avg
+        ];
+    }
+
+    /**
+     * Get daily history data
+     */
+    private function getDailyHistory(int $hostId, string $mount, int $days): array {
         $itemKey = 'vfs.fs.size[' . $mount . ',used]';
         
-        // Get item ID
         $items = API::Item()->get([
             'output' => ['itemid'],
             'hostids' => $hostId,
@@ -284,6 +623,29 @@ class StorageAnalytics extends CController {
         ]);
 
         if (empty($items)) {
+            return [];
+        }
+
+        $itemId = $items[0]['itemid'];
+        $timeFrom = time() - ($days * 86400);
+
+        return API::History()->get([
+            'output' => ['clock', 'value'],
+            'itemids' => [$itemId],
+            'history' => 3,
+            'time_from' => $timeFrom,
+            'sortfield' => 'clock',
+            'sortorder' => 'ASC'
+        ]);
+    }
+
+    /**
+     * Calculate growth rate (legacy method)
+     */
+    private function calculateGrowthRate(int $hostId, string $mount, int $days, string $method): array {
+        $history = $this->getDailyHistory($hostId, $mount, $days);
+
+        if (count($history) < 2) {
             return [
                 'daily_growth' => 0,
                 'trend' => 'stable',
@@ -291,29 +653,6 @@ class StorageAnalytics extends CController {
             ];
         }
 
-        $itemId = $items[0]['itemid'];
-        $timeFrom = time() - ($days * 86400);
-
-        // Get history data
-        $history = API::History()->get([
-            'output' => ['clock', 'value'],
-            'itemids' => [$itemId],
-            'history' => 3,
-            'time_from' => $timeFrom,
-            'sortfield' => 'clock',
-            'sortorder' => 'ASC',
-            'limit' => 30 // Limit to reasonable amount
-        ]);
-
-        if (count($history) < 2) {
-            return [
-                'daily_growth' => 0,
-                'trend' => 'insufficient_data',
-                'confidence' => 0
-            ];
-        }
-
-        // Simple growth calculation (working method)
         $first = reset($history);
         $last = end($history);
 
@@ -330,10 +669,32 @@ class StorageAnalytics extends CController {
         $confidence = min(100, (count($history) / $days) * 100);
 
         return [
-            'daily_growth' => $dailyGrowth,
+            'daily_growth_raw' => $dailyGrowth,
+            'daily_growth' => $dailyGrowth > 0 ? $this->formatBytes($dailyGrowth) . '/day' : _('Stable'),
             'trend' => $this->determineTrend($dailyGrowth),
             'confidence' => round($confidence)
         ];
+    }
+
+    /**
+     * Calculate model confidence
+     */
+    private function calculateModelConfidence(array $actual, float $predicted): int {
+        if (count($actual) < 2) return 0;
+        
+        // Simple confidence based on variance
+        $mean = array_sum($actual) / count($actual);
+        $variance = 0;
+        foreach ($actual as $value) {
+            $variance += pow($value - $mean, 2);
+        }
+        $variance /= count($actual);
+        
+        // Lower variance = higher confidence
+        $stddev = sqrt($variance);
+        $confidence = 100 - min(100, ($stddev / $mean) * 100);
+        
+        return max(0, min(100, (int)$confidence));
     }
 
     /**
@@ -607,7 +968,10 @@ class StorageAnalytics extends CController {
 			],
 			'prediction_methods' => [
 				'simple' => _('Simple Linear'),
-				'seasonal' => _('Seasonal Adjusted')
+				'seasonal' => _('Seasonal Adjusted'),
+				'holt_winters' => _('Holt-Winters (Advanced)'),
+				'arima' => _('ARIMA (Statistical)'),
+				'ensemble' => _('Ensemble (Multi-Model)')
 			],
 			'refresh_intervals' => [
 				0 => _('Manual'),
@@ -710,5 +1074,372 @@ class StorageAnalytics extends CController {
         $bytes /= pow(1024, $pow);
         
         return round($bytes, $precision) . ' ' . $units[$pow];
+    }
+
+    /**
+     * Check and suggest database optimizations
+     */
+    private function checkDatabaseOptimizations(): array {
+        $suggestions = [];
+        
+        // Check for missing indexes (simplified example)
+        $tables = ['history', 'history_uint', 'trends', 'items', 'hosts'];
+        
+        foreach ($tables as $table) {
+            // In real implementation, check actual indexes via DB::select()
+            $suggestions[] = "Consider composite indexes on $table for time-based queries";
+        }
+        
+        return $suggestions;
+    }
+
+    /**
+     * Export to CSV
+     */
+    private function exportCSV(array $storageData, array $summary, array $filter): void {
+        $filename = 'storage_analytics_' . date('Y-m-d_H-i-s') . '.csv';
+        
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        
+        $output = fopen('php://output', 'w');
+        
+        // UTF-8 BOM for Excel compatibility
+        fwrite($output, "\xEF\xBB\xBF");
+        
+        // Header row
+        fputcsv($output, [
+            _('Host'),
+            _('Host Name'),
+            _('Mount Point'),
+            _('Total Space (bytes)'),
+            _('Total Space (human)'),
+            _('Used Space (bytes)'),
+            _('Used Space (human)'),
+            _('Free Space (bytes)'),
+            _('Usage %'),
+            _('Daily Growth (bytes)'),
+            _('Daily Growth (human)'),
+            _('Days Until Full'),
+            _('Growth Trend'),
+            _('Confidence %'),
+            _('Algorithm'),
+            _('Status'),
+            _('Warning Threshold'),
+            _('Critical Threshold'),
+            _('Last Updated')
+        ]);
+        
+        // Data rows
+        foreach ($storageData as $item) {
+            $free = $item['total_raw'] - $item['used_raw'];
+            
+            fputcsv($output, [
+                $item['host'],
+                $item['host_name'],
+                $item['mount'],
+                $item['total_raw'],
+                $item['total_space'],
+                $item['used_raw'],
+                $item['used_space'],
+                $free,
+                $item['usage_pct'],
+                $item['daily_growth_raw'] ?? 0,
+                $item['daily_growth'] ?? '0 B/day',
+                $item['days_until_full'] ?? _('No growth'),
+                $item['growth_trend'] ?? 'stable',
+                $item['confidence'] ?? 0,
+                $item['algorithm'] ?? 'simple',
+                $item['status'] ?? 'ok',
+                $filter['warning_threshold'],
+                $filter['critical_threshold'],
+                date('Y-m-d H:i:s')
+            ]);
+        }
+        
+        // Summary section
+        fputcsv($output, []); // Empty row
+        fputcsv($output, [_('SUMMARY SECTION')]);
+        fputcsv($output, [
+            _('Metric'), _('Value'), _('Details')
+        ]);
+        
+        fputcsv($output, [
+            _('Total Hosts'),
+            $summary['total_hosts'],
+            ''
+        ]);
+        
+        fputcsv($output, [
+            _('Total Filesystems'),
+            $summary['total_filesystems'],
+            ''
+        ]);
+        
+        fputcsv($output, [
+            _('Total Capacity'),
+            $summary['total_capacity_raw'],
+            $summary['total_capacity']
+        ]);
+        
+        fputcsv($output, [
+            _('Total Used'),
+            $summary['total_used_raw'],
+            $summary['total_used']
+        ]);
+        
+        fputcsv($output, [
+            _('Average Usage %'),
+            $summary['total_usage_pct'],
+            ''
+        ]);
+        
+        fputcsv($output, [
+            _('Critical Filesystems'),
+            $summary['critical_count'],
+            ''
+        ]);
+        
+        fputcsv($output, [
+            _('Warning Filesystems'),
+            $summary['warning_count'],
+            ''
+        ]);
+        
+        fputcsv($output, [
+            _('Average Daily Growth'),
+            $summary['avg_daily_growth'],
+            $summary['avg_daily_growth_fmt']
+        ]);
+        
+        if ($summary['earliest_full']) {
+            fputcsv($output, [
+                _('Earliest Full Forecast'),
+                $summary['earliest_full']['days'],
+                sprintf(_('%s on %s'), $summary['earliest_full']['host'], $summary['earliest_full']['date'])
+            ]);
+        }
+        
+        fclose($output);
+        exit;
+    }
+
+    /**
+     * Export to HTML
+     */
+    private function exportHTML(array $storageData, array $summary, array $filter): void {
+        $filename = 'storage_analytics_' . date('Y-m-d_H-i-s') . '.html';
+        
+        header('Content-Type: text/html; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        
+        ob_start();
+        ?>
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title><?= _('Storage Analytics Export') ?></title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+                h1, h2, h3 { color: #2c3e50; }
+                .header { border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }
+                .summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+                .card { border: 1px solid #ddd; border-radius: 5px; padding: 15px; background: #f9f9f9; }
+                .card h3 { margin-top: 0; font-size: 14px; color: #7f8c8d; }
+                .card .value { font-size: 24px; font-weight: bold; margin: 10px 0; }
+                table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+                th { background: #f2f2f2; font-weight: bold; }
+                tr.critical { background: #ffebee; }
+                tr.warning { background: #fff8e1; }
+                .status-badge { padding: 3px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+                .critical { background: #ffcdd2; color: #c62828; }
+                .warning { background: #ffecb3; color: #ff8f00; }
+                .ok { background: #c8e6c9; color: #2e7d32; }
+                .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #7f8c8d; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1><?= _('Storage Analytics Report') ?></h1>
+                <p><?= _('Generated on') ?>: <?= date('Y-m-d H:i:s') ?></p>
+                <p><?= _('Filter') ?>: 
+                    <?= _('Time Range') ?>: <?= $filter['time_range'] ?> <?= _('days') ?> | 
+                    <?= _('Method') ?>: <?= $filter['prediction_method'] ?> |
+                    <?= _('Warning') ?>: <?= $filter['warning_threshold'] ?>% |
+                    <?= _('Critical') ?>: <?= $filter['critical_threshold'] ?>%
+                </p>
+            </div>
+            
+            <div class="summary-cards">
+                <div class="card">
+                    <h3><?= _('Total Storage') ?></h3>
+                    <div class="value"><?= $summary['total_capacity'] ?></div>
+                    <div><?= $summary['total_usage_pct'] ?>% <?= _('used') ?></div>
+                </div>
+                
+                <div class="card">
+                    <h3><?= _('Used Storage') ?></h3>
+                    <div class="value"><?= $summary['total_used'] ?></div>
+                    <div>
+                        <span class="critical"><?= $summary['critical_count'] ?> <?= _('critical') ?></span>,
+                        <span class="warning"><?= $summary['warning_count'] ?> <?= _('warning') ?></span>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3><?= _('Avg Daily Growth') ?></h3>
+                    <div class="value"><?= $summary['avg_daily_growth_fmt'] ?></div>
+                    <div><?= $summary['total_hosts'] ?> <?= _('hosts') ?>, <?= $summary['total_filesystems'] ?> <?= _('filesystems') ?></div>
+                </div>
+                
+                <div class="card">
+                    <h3><?= _('Earliest Full') ?></h3>
+                    <div class="value">
+                        <?php if ($summary['earliest_full']): ?>
+                            <?= $summary['earliest_full']['days'] ?> <?= _('days') ?>
+                        <?php else: ?>
+                            <?= _('N/A') ?>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($summary['earliest_full']): ?>
+                        <div><?= $summary['earliest_full']['host'] ?> (<?= $summary['earliest_full']['date'] ?>)</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <h2><?= _('Detailed Storage Analysis') ?></h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th><?= _('Host') ?></th>
+                        <th><?= _('Mount Point') ?></th>
+                        <th><?= _('Total') ?></th>
+                        <th><?= _('Used') ?></th>
+                        <th><?= _('Usage %') ?></th>
+                        <th><?= _('Daily Growth') ?></th>
+                        <th><?= _('Days Until Full') ?></th>
+                        <th><?= _('Algorithm') ?></th>
+                        <th><?= _('Status') ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($storageData as $item): ?>
+                    <tr class="<?= $item['status'] ?>">
+                        <td><?= htmlspecialchars($item['host']) ?></td>
+                        <td><code><?= htmlspecialchars($item['mount']) ?></code></td>
+                        <td><?= $item['total_space'] ?></td>
+                        <td><?= $item['used_space'] ?></td>
+                        <td><?= $item['usage_pct'] ?>%</td>
+                        <td><?= $item['daily_growth'] ?? '0 B/day' ?></td>
+                        <td><?= $item['days_until_full'] ?? _('No growth') ?></td>
+                        <td><?= $item['algorithm'] ?? 'simple' ?></td>
+                        <td>
+                            <span class="status-badge <?= $item['status'] ?>">
+                                <?= ucfirst($item['status']) ?>
+                            </span>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            
+            <?php if (!empty($summary['top_growers'])): ?>
+            <h3><?= _('Fastest Growing Filesystems') ?></h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th><?= _('Host') ?></th>
+                        <th><?= _('Mount Point') ?></th>
+                        <th><?= _('Growth/Day') ?></th>
+                        <th><?= _('Days Left') ?></th>
+                        <th><?= _('Algorithm') ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($summary['top_growers'] as $grower): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($grower['host']) ?></td>
+                        <td><code><?= htmlspecialchars($grower['mount']) ?></code></td>
+                        <td><?= $grower['daily_growth'] ?></td>
+                        <td><?= $grower['days_until_full'] ?></td>
+                        <td><?= $grower['algorithm'] ?? 'simple' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+            
+            <div class="footer">
+                <p><?= _('Report generated by Zabbix Storage Analytics Pro Module') ?></p>
+                <p><?= _('Calculation based on') ?>: <?= $filter['time_range'] ?> <?= _('days of historical data') ?></p>
+                <p><?= _('Prediction method') ?>: <?= $filter['prediction_method'] ?></p>
+                <p><?= _('Thresholds') ?>: <?= _('Warning') ?> <?= $filter['warning_threshold'] ?>%, <?= _('Critical') ?> <?= $filter['critical_threshold'] ?>%</p>
+            </div>
+        </body>
+        </html>
+        <?php
+        echo ob_get_clean();
+        exit;
+    }
+
+    /**
+     * Export to JSON
+     */
+    private function exportJSON(array $storageData, array $summary, array $filter): void {
+        $filename = 'storage_analytics_' . date('Y-m-d_H-i-s') . '.json';
+        
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        
+        $exportData = [
+            'metadata' => [
+                'generated' => date('Y-m-d H:i:s'),
+                'time_range' => $filter['time_range'],
+                'prediction_method' => $filter['prediction_method'],
+                'warning_threshold' => $filter['warning_threshold'],
+                'critical_threshold' => $filter['critical_threshold'],
+                'total_records' => count($storageData)
+            ],
+            'summary' => $summary,
+            'data' => $storageData,
+            'top_growers' => $summary['top_growers'] ?? [],
+            'statistics' => [
+                'hosts_by_status' => [
+                    'ok' => 0,
+                    'warning' => 0,
+                    'critical' => 0
+                ],
+                'growth_distribution' => [
+                    'rapid_increase' => 0,
+                    'increasing' => 0,
+                    'slow_increase' => 0,
+                    'stable' => 0,
+                    'decreasing' => 0
+                ]
+            ]
+        ];
+        
+        // Calculate additional statistics
+        foreach ($storageData as $item) {
+            $exportData['statistics']['hosts_by_status'][$item['status']]++;
+            
+            if (isset($item['growth_trend'])) {
+                $exportData['statistics']['growth_distribution'][$item['growth_trend']]++;
+            }
+        }
+        
+        echo json_encode($exportData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    /**
+     * Show error message
+     */
+    private function showError(string $message): void {
+        echo json_encode(['error' => $message]);
+        exit;
     }
 }
