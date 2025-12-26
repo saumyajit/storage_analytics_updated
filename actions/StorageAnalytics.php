@@ -66,6 +66,47 @@ class StorageAnalytics extends CController {
             'filter_enabled'    => $this->getInput('filter_enabled', 0)
         ];
 
+		// NEW: base-page guard
+		$hasScope =
+			!empty($filter['groupids']) ||
+			!empty($filter['hostids']) ||
+			!empty($filter['host']);
+	
+		if (!$hasScope) {
+			$emptySummary = [
+				'total_capacity_raw'   => 0,
+				'total_used_raw'       => 0,
+				'total_capacity'       => '0 B',
+				'total_used'           => '0 B',
+				'total_usage_pct'      => 0,
+				'total_hosts'          => 0,
+				'total_filesystems'    => 0,
+				'critical_count'       => 0,
+				'warning_count'        => 0,
+				'avg_daily_growth'     => 0,
+				'avg_daily_growth_fmt' => '0 B/day',
+				'earliest_full'        => null,
+				'top_growers'          => []
+			];
+	
+			$response = new CControllerResponseData([
+				'storageData'   => [],
+				'summary'       => $emptySummary,
+				'filter'        => $filter,
+				'filterOptions' => $this->getFilterOptions($filter),
+				'page'          => 1,
+				'page_limit'    => 50,
+				'total_records' => 0,
+				'formatBytes'   => [$this, 'formatBytes'],
+				'buildQueryString' => function($filter, $exclude = []) {
+					return $this->buildQueryString($filter, $exclude);
+				}
+			]);
+			$response->setTitle(_('Storage Analytics'));
+			$this->setResponse($response);
+			return;
+		}
+
         // Fetch storage data with filters
         $storageData = $this->getDiskDataWithFilters($filter);
         
