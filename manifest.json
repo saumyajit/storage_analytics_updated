@@ -1,0 +1,20 @@
+{
+    "manifest_version": 2.0,
+    "id": "disk-analysis",
+    "name": "Storage Analytics Pro",
+    "version": "1.0",
+    "author": "Saumyajit Pramanik",
+    "namespace": "diskanalyser",
+    "url": "",
+    "description": "Advanced analytical view of disk usage with growth prediction and forecasting",
+    "actions": {
+        "disk.analyser": {
+            "class": "DiskAnalysis",
+            "view": "data"
+        },
+        "storage.analytics": {
+            "class": "StorageAnalytics",
+            "view": "storage.analytics"
+        }
+    }
+}
