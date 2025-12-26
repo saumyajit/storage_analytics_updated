@@ -815,7 +815,6 @@ class StorageAnalytics extends CController {
 		fputcsv($output, ['DETAILED STORAGE DATA']);
 		fputcsv($output, [
 			'Host',
-			'Host Name', 
 			'Mount Point',
 			'Total Space',
 			'Used Space', 
@@ -836,7 +835,6 @@ class StorageAnalytics extends CController {
 			
 			fputcsv($output, [
 				$item['host'] ?? 'Unknown',
-				$item['host_name'] ?? 'Unknown',
 				$item['mount'] ?? '/',
 				$item['total_space'] ?? '0 B',
 				$item['used_space'] ?? '0 B',
