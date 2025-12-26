@@ -427,50 +427,52 @@ class StorageAnalytics extends CController {
     /**
      * Calculate days until full with growth rate
      */
-    private function calculateDaysUntilFull(float $total, float $used, float $dailyGrowth): string {
-        if ($dailyGrowth <= 0) {
-            return _('No growth');
-        }
-
-        $freeSpace = $total - $used;
-        
-        if ($freeSpace <= 0) {
-            return _('Already full');
-        }
-
-        // Additional check for unrealistic growth
-        if ($dailyGrowth > $freeSpace * 10) {
-            return _('No growth');
-        }
-
-        $days = $freeSpace / $dailyGrowth;
-        
-        // Handle unrealistic calculations
-        if ($days > 365 * 10) { // More than 10 years
-            return _('More than 10 years');
-        } elseif ($days > 365) {
-            $years = floor($days / 365);
-            $remainingDays = $days % 365;
-            $months = floor($remainingDays / 30);
-            
-            if ($months > 0) {
-                return sprintf(_('%d years %d months'), $years, $months);
-            } else {
-                return sprintf(_('%d years'), $years);
-            }
-        } elseif ($days > 30) {
-            $months = floor($days / 30);
-            $remainingDays = floor($days % 30);
-            
-            if ($remainingDays > 0) {
-                return sprintf(_('%d months %d days'), $months, $remainingDays);
-            } else {
-                return sprintf(_('%d months'), $months);
-            }
-        } else {
-            return sprintf(_('%d days'), floor($days));
-        }
-    }
+	private function calculateDaysUntilFull(float $total, float $used, float $dailyGrowth): string {
+		if ($dailyGrowth <= 0) {
+			return _('No growth');
+		}
+	
+		$freeSpace = $total - $used;
+		if ($freeSpace <= 0) {
+			return _('Already full');
+		}
+	
+		// Additional check for unrealistic growth
+		if ($dailyGrowth > $freeSpace * 10) {
+			return _('No growth');
+		}
+	
+		$daysFloat = $freeSpace / $dailyGrowth;
+	
+		// Normalize to an integer when branching on years / months / days
+		$days = (int) round($daysFloat);
+	
+		if ($days > 365 * 10) { // More than 10 years
+			return _('More than 10 years');
+		}
+		elseif ($days > 365) {
+			$years  = intdiv($days, 365);
+			$rem    = $days % 365;
+			$months = intdiv($rem, 30);
+	
+			if ($months > 0) {
+				return sprintf(_('%d years %d months'), $years, $months);
+			}
+			return sprintf(_('%d years'), $years);
+		}
+		elseif ($days > 30) {
+			$months = intdiv($days, 30);
+			$rem    = $days % 30;
+	
+			if ($rem > 0) {
+				return sprintf(_('%d months %d days'), $months, $rem);
+			}
+			return sprintf(_('%d months'), $months);
+		}
+		else {
+			return sprintf(_('%d days'), $days);
+		}
+	}
 
     /**
      * Determine status based on usage and days until full
