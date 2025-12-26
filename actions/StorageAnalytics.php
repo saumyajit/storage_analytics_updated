@@ -326,7 +326,7 @@ class StorageAnalytics extends CController {
 			$history = API::History()->get([
 				'output'    => ['itemid', 'clock', 'value'],
 				'itemids'   => $itemIds,
-				'history'   => 3,              // numeric (pused is numeric)
+				'history'   => 0,              // numeric float (pused is numeric)
 				'time_from' => $timeFrom,
 				'sortfield' => ['itemid', 'clock'],
 				'limit'     => 1000
