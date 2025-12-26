@@ -9,7 +9,8 @@ if (!isset($filterOptions) || !isset($filter)) {
 }
 
 // Get limited initial groups (like Zabbix does)
-$initialGroups = array_slice($filterOptions['hostgroups'], 0, 20); // Limit to 20 initially
+// $initialGroups = array_slice($filterOptions['hostgroups'], 0, 20); // Limit to 20 initially
+$initialGroups = $filterOptions['hostgroups'];
 $selectedGroupIds = $filter['groupids'] ?? [];
 $selectedHostIds = $filter['hostids'] ?? [];
 
