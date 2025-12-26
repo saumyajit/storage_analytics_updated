@@ -174,110 +174,123 @@ class StorageAnalytics extends CController {
     /**
      * WORKING DATA COLLECTION METHOD (keep original)
      */
-    private function getDiskDataWithFilters(array $filter): array {
-        $diskData = [];
-        
-        // Build API parameters based on filters
-        $apiParams = [
-            'search' => ['key_' => 'vfs.fs.size'],
-            'output' => ['itemid', 'key_', 'name', 'lastvalue', 'hostid'],
-            'selectHosts' => ['hostid', 'name'],
-            'monitored' => true,
-            'preservekeys' => true
-        ];
-        
-        // Apply group filter
-        if (!empty($filter['groupids'])) {
-            $apiParams['groupids'] = $filter['groupids'];
-        }
-        
-        // Apply host filter
-        if (!empty($filter['hostids'])) {
-            $apiParams['hostids'] = $filter['hostids'];
-        }
-        
-        // Apply host search
-        if (!empty($filter['host'])) {
-            $apiParams['search']['host'] = $filter['host'];
-        }
-        
-        $items = API::Item()->get($apiParams);
-        
-        $groupedData = [];
-        $hostNames = [];
-        
-        foreach ($items as $item) {
-            // Match mount point and item type ('total' or 'pused')
-            if (!preg_match('/vfs\.fs\.size\[(.*),(total|pused|used)\]/i', $item['key_'], $matches)) {
-                continue;
-            }
-
-            $hostId = $item['hostid'];
-            $hostNames[$hostId] = $item['hosts'][0]['name'];
-            
-            $mountPointKey = trim($matches[1], '"') ?: '/';
-            $type = strtolower($matches[2]); // 'total', 'pused', or 'used'
-
-            $key = $hostId . '|' . $mountPointKey;
-
-            if (!isset($groupedData[$key])) {
-                $groupedData[$key] = [
-                    'hostid' => $hostId,
-                    'mount' => $mountPointKey,
-                    'total' => 0.0,
-                    'pused' => 0.0,
-                    'used' => 0.0
-                ];
-            }
-            
-            $groupedData[$key][$type] = (float) $item['lastvalue'];
-        }
-
-        // Calculate metrics for the final array
-        foreach ($groupedData as $key => $data) {
-            $hostId = $data['hostid'];
-            $totalRaw = $data['total'];
-            $pused = $data['pused'];
-            $usedRaw = $data['used'];
-            
-            // Skip if we don't have data
-            if ($totalRaw <= 0 && $usedRaw <= 0) {
-                continue;
-            }
-            
-            // Calculate used bytes if we have percentage but not raw used
-            if ($usedRaw <= 0 && $pused > 0 && $totalRaw > 0) {
-                $usedRaw = $totalRaw * ($pused / 100.0);
-            }
-            
-            // Calculate total if we have used and percentage
-            if ($totalRaw <= 0 && $usedRaw > 0 && $pused > 0) {
-                $totalRaw = $usedRaw / ($pused / 100.0);
-            }
-            
-            // Skip if still no valid data
-            if ($totalRaw <= 0 || $usedRaw <= 0) {
-                continue;
-            }
-            
-            $usagePct = round(($usedRaw / $totalRaw) * 100, 1);
-            
-            $diskData[] = [
-                'hostid' => $hostId,
-                'host' => $hostNames[$hostId] ?? 'Unknown',
-                'host_name' => $hostNames[$hostId] ?? 'Unknown',
-                'mount' => $data['mount'],
-                'total_raw' => $totalRaw,
-                'used_raw' => $usedRaw,
-                'pused' => $pused,
-                'total_space' => $this->formatBytes($totalRaw),
-                'used_space' => $this->formatBytes($usedRaw),
-                'usage_pct' => $usagePct
-            ];
-        }
-
-        return $diskData;
-    }
+	private function getDiskDataWithFilters(array $filter): array {
+		$diskData = [];
+	
+		// Build API parameters based on filters
+		$apiParams = [
+			'search'       => ['key_' => 'vfs.fs.size'],
+			'output'       => ['itemid', 'key_', 'name', 'lastvalue', 'hostid'],
+			'selectHosts'  => ['hostid', 'name'],
+			'monitored'    => true,
+			'preservekeys' => true
+		];
+	
+		// Apply group filter
+		if (!empty($filter['groupids'])) {
+			$apiParams['groupids'] = $filter['groupids'];
+		}
+	
+		// Apply host filter
+		if (!empty($filter['hostids'])) {
+			$apiParams['hostids'] = $filter['hostids'];
+		}
+	
+		// Apply host search
+		if (!empty($filter['host'])) {
+			$apiParams['search']['host'] = $filter['host'];
+		}
+	
+		$items      = API::Item()->get($apiParams);
+		$groupedData = [];
+		$hostNames   = [];
+	
+		// Mounts to exclude completely from analytics
+		$exclude_mounts = [
+			'/tmp',
+			'/var/tmp',
+			'P:',
+			'Q:'
+			// add more as needed
+		];
+	
+		foreach ($items as $item) {
+			// Match mount point and item type ('total', 'pused' or 'used')
+			if (!preg_match('/vfs\.fs\.size\[(.*),(total|pused|used)\]/i', $item['key_'], $matches)) {
+				continue;
+			}
+	
+			$hostId = $item['hostid'];
+			$hostNames[$hostId] = $item['hosts'][0]['name'];
+	
+			$mountPointKey = trim($matches[1], '"') ?: '/';
+			$type          = strtolower($matches[2]); // 'total', 'pused', or 'used'
+	
+			// Skip excluded mounts
+			if (in_array($mountPointKey, $exclude_mounts, true)) {
+				continue;
+			}
+	
+			$key = $hostId . '|' . $mountPointKey;
+	
+			if (!isset($groupedData[$key])) {
+				$groupedData[$key] = [
+					'hostid' => $hostId,
+					'mount'  => $mountPointKey,
+					'total'  => 0.0,
+					'pused'  => 0.0,
+					'used'   => 0.0
+				];
+			}
+	
+			$groupedData[$key][$type] = (float) $item['lastvalue'];
+		}
+	
+		// Calculate metrics for the final array
+		foreach ($groupedData as $key => $data) {
+			$hostId   = $data['hostid'];
+			$totalRaw = $data['total'];
+			$pused    = $data['pused'];
+			$usedRaw  = $data['used'];
+	
+			// Skip if we don't have any data
+			if ($totalRaw <= 0 && $usedRaw <= 0) {
+				continue;
+			}
+	
+			// Calculate used bytes if we have percentage but not raw used
+			if ($usedRaw <= 0 && $pused > 0 && $totalRaw > 0) {
+				$usedRaw = $totalRaw * ($pused / 100.0);
+			}
+	
+			// Calculate total if we have used and percentage
+			if ($totalRaw <= 0 && $usedRaw > 0 && $pused > 0) {
+				$totalRaw = $usedRaw / ($pused / 100.0);
+			}
+	
+			// Skip if still no valid data
+			if ($totalRaw <= 0 || $usedRaw <= 0) {
+				continue;
+			}
+	
+			$usagePct = round(($usedRaw / $totalRaw) * 100, 1);
+	
+			$diskData[] = [
+				'hostid'      => $hostId,
+				'host'        => $hostNames[$hostId] ?? 'Unknown',
+				'host_name'   => $hostNames[$hostId] ?? 'Unknown',
+				'mount'       => $data['mount'],
+				'total_raw'   => $totalRaw,
+				'used_raw'    => $usedRaw,
+				'pused'       => $pused,
+				'total_space' => $this->formatBytes($totalRaw),
+				'used_space'  => $this->formatBytes($usedRaw),
+				'usage_pct'   => $usagePct
+			];
+		}
+	
+		return $diskData;
+	}
 
     /**
      * SIMPLIFIED: Calculate predictions with batch processing
