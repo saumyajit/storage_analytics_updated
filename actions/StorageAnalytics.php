@@ -282,99 +282,117 @@ class StorageAnalytics extends CController {
     /**
      * SIMPLIFIED: Calculate predictions with batch processing
      */
-    private function calculateBatchPredictions(array $storageData, array $filter): array {
-        $method = $filter['prediction_method'];
-        $days = $filter['time_range'];
-        
-        // Group item IDs for batch processing
-        $itemRequests = [];
-        foreach ($storageData as $idx => $item) {
-            $itemKey = 'vfs.fs.size[' . $item['mount'] . ',used]';
-            $items = API::Item()->get([
-                'output' => ['itemid'],
-                'hostids' => $item['hostid'],
-                'filter' => ['key_' => $itemKey],
-                'limit' => 1
-            ]);
-            
-            if (!empty($items)) {
-                $itemRequests[$items[0]['itemid']] = $idx;
-            }
-        }
-        
-        // Batch history call if we have items
-        if (!empty($itemRequests)) {
-            $itemIds = array_keys($itemRequests);
-            $timeFrom = time() - ($days * 86400);
-            
-            $history = API::History()->get([
-                'output' => ['itemid', 'clock', 'value'],
-                'itemids' => $itemIds,
-                'history' => 3,
-                'time_from' => $timeFrom,
-                'sortfield' => ['itemid', 'clock'],
-                'limit' => 1000
-            ]);
-            
-            // Group history by item ID
-            $groupedHistory = [];
-            foreach ($history as $record) {
-                $groupedHistory[$record['itemid']][] = $record;
-            }
-            
-            // Process each item
-            foreach ($itemRequests as $itemId => $dataIdx) {
-                $itemHistory = $groupedHistory[$itemId] ?? [];
-                
-                if (count($itemHistory) >= 2) {
-                    $first = reset($itemHistory);
-                    $last = end($itemHistory);
-                    
-                    $valueDiff = $last['value'] - $first['value'];
-                    $timeDiff = max(1, ($last['clock'] - $first['clock']) / 86400);
-                    $dailyGrowth = $valueDiff / $timeDiff;
-                    
-                    // Apply to storage data
-                    $storageData[$dataIdx]['daily_growth_raw'] = $dailyGrowth;
-                    $storageData[$dataIdx]['daily_growth'] = $dailyGrowth > 0 
-                        ? $this->formatBytes($dailyGrowth) . '/day' 
-                        : _('Stable');
-                        
-                    $storageData[$dataIdx]['days_until_full'] = $this->calculateDaysUntilFull(
-                        $storageData[$dataIdx]['total_raw'],
-                        $storageData[$dataIdx]['used_raw'],
-                        $dailyGrowth
-                    );
-                    
-                    $storageData[$dataIdx]['growth_trend'] = $this->determineTrend($dailyGrowth);
-                    $storageData[$dataIdx]['confidence'] = min(100, (count($itemHistory) / $days) * 100);
-                    $storageData[$dataIdx]['algorithm'] = $method;
-                }
-            }
-        }
-        
-        // Set defaults for items without history
-        foreach ($storageData as &$item) {
-            if (!isset($item['daily_growth_raw'])) {
-                $item['daily_growth_raw'] = 0;
-                $item['daily_growth'] = _('Stable');
-                $item['days_until_full'] = _('No growth');
-                $item['growth_trend'] = 'stable';
-                $item['confidence'] = 0;
-                $item['algorithm'] = $method;
-            }
-            
-            // Determine status
-            $item['status'] = $this->determineStatus(
-                $item['usage_pct'],
-                $item['days_until_full'],
-                $filter['warning_threshold'],
-                $filter['critical_threshold']
-            );
-        }
-        
-        return $storageData;
-    }
+	private function calculateBatchPredictions(array $storageData, array $filter): array {
+		$method = $filter['prediction_method'];
+		$days   = $filter['time_range'];
+	
+		// Map: history itemid => index in $storageData
+		$itemRequests = [];
+	
+		// For each filesystem, find the vfs.fs.size[<mount>,pused] item
+		foreach ($storageData as $idx => $item) {
+			$itemKey = 'vfs.fs.size[' . $item['mount'] . ',pused]';
+	
+			$items = API::Item()->get([
+				'output'  => ['itemid'],
+				'hostids' => $item['hostid'],
+				'filter'  => ['key_' => $itemKey],
+				'limit'   => 1
+			]);
+	
+			if (!empty($items)) {
+				$itemRequests[$items[0]['itemid']] = $idx;
+			}
+		}
+	
+		// Batch history call if we have any items
+		if (!empty($itemRequests)) {
+			$itemIds  = array_keys($itemRequests);
+			$timeFrom = time() - ($days * 86400);
+	
+			$history = API::History()->get([
+				'output'    => ['itemid', 'clock', 'value'],
+				'itemids'   => $itemIds,
+				'history'   => 3,              // numeric (pused is numeric)
+				'time_from' => $timeFrom,
+				'sortfield' => ['itemid', 'clock'],
+				'limit'     => 1000
+			]);
+	
+			// Group history by item ID
+			$groupedHistory = [];
+			foreach ($history as $record) {
+				$groupedHistory[$record['itemid']][] = $record;
+			}
+	
+			// Process each filesystem
+			foreach ($itemRequests as $itemId => $dataIdx) {
+				$itemHistory = $groupedHistory[$itemId] ?? [];
+	
+				if (count($itemHistory) >= 2) {
+					$first = reset($itemHistory);
+					$last  = end($itemHistory);
+	
+					// Convert pused (%) history to used bytes using total_raw
+					$totalRaw  = $storageData[$dataIdx]['total_raw'];
+					$usedFirst = $totalRaw * ((float) $first['value'] / 100.0);
+					$usedLast  = $totalRaw * ((float) $last['value'] / 100.0);
+	
+					$valueDiff    = $usedLast - $usedFirst;
+					$timeDiffDays = max(1, ($last['clock'] - $first['clock']) / 86400);
+	
+					$dailyGrowth = $valueDiff / $timeDiffDays;
+	
+					// Apply to storage data
+					$storageData[$dataIdx]['daily_growth_raw'] = $dailyGrowth;
+					$storageData[$dataIdx]['daily_growth'] =
+						$dailyGrowth > 0
+							? $this->formatBytes($dailyGrowth) . '/day'
+							: _('Stable');
+	
+					$storageData[$dataIdx]['days_until_full'] = $this->calculateDaysUntilFull(
+						$storageData[$dataIdx]['total_raw'],
+						$storageData[$dataIdx]['used_raw'],   // already computed from total+pused
+						$dailyGrowth
+					);
+	
+					$storageData[$dataIdx]['growth_trend'] =
+						$this->determineTrend($dailyGrowth);
+	
+					// Confidence: how many days have data vs. requested range
+					$storageData[$dataIdx]['confidence'] = min(
+						100,
+						(count($itemHistory) / $days) * 100
+					);
+	
+					$storageData[$dataIdx]['algorithm'] = $method;
+				}
+			}
+		}
+	
+		// Defaults for items without usable history
+		foreach ($storageData as &$item) {
+			if (!isset($item['daily_growth_raw'])) {
+				$item['daily_growth_raw'] = 0;
+				$item['daily_growth']     = _('Stable');
+				$item['days_until_full']  = _('No growth');
+				$item['growth_trend']     = 'stable';
+				$item['confidence']       = 0;
+				$item['algorithm']        = $method;
+			}
+	
+			// Determine status (uses usage_pct + days_until_full)
+			$item['status'] = $this->determineStatus(
+				$item['usage_pct'],
+				$item['days_until_full'],
+				$filter['warning_threshold'],
+				$filter['critical_threshold']
+			);
+		}
+		unset($item);
+	
+		return $storageData;
+	}
 
     /**
      * Determine growth trend direction
