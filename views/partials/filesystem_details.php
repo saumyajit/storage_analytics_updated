@@ -59,7 +59,7 @@ foreach ($storageData as $item) {
                     <th><?= _('Daily Growth') ?></th>
                     <th><?= _('Days Until Full') ?></th>
                     <th><?= _('Trend') ?></th>
-                    <th><?= _('Actions') ?></th>
+                    <th><?= _('Graphs') ?></th>
                 </tr>
             </thead>
             <tbody>
