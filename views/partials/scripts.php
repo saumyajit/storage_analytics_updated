@@ -294,13 +294,8 @@ class StorageAnalytics {
                 modal.style.display = 'none';
             }
         };
-    }
-    
-    showGrowthChart(hostId, mount) {
-        // Implement chart display
-        alert(`<?= _("Chart for") ?> ${hostId}/${mount} - <?= _("To be implemented") ?>`);
-    }
-    
+    } 
+   
     showSeasonalPattern(pattern) {
         // Create pattern display
         let html = '<div class="pattern-display"><h4><?= _("Weekly Pattern") ?></h4><ul>';
