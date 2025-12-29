@@ -264,7 +264,6 @@
                     <th><?= _('Days Until Full') ?></th>
                     <th><?= _('Status') ?></th>
                     <th><?= _('Filesystems') ?></th>
-                    <th><?= _('Actions') ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -309,11 +308,6 @@
                         <span class="fs-count"><?= $host['fs_count'] ?></span>
                     </td>
                     <td>
-                        <button type="button" class="btn-details btn-small" 
-                                data-hostid="<?= $hostId ?>"
-                                data-host="<?= htmlspecialchars($host['host']) ?>">
-                            <?= _('Details') ?>
-                        </button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
