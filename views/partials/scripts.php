@@ -103,16 +103,7 @@ class StorageAnalytics {
                 this.showHostDetails(hostId, hostName);
             });
         });
-        
-        // Chart buttons
-        document.querySelectorAll('.btn-chart').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const hostId = e.target.dataset.hostid;
-                const mount = e.target.dataset.mount;
-                this.showGrowthChart(hostId, mount);
-            });
-        });
-        
+              
         // Pattern buttons
         document.querySelectorAll('.btn-pattern').forEach(btn => {
             btn.addEventListener('click', (e) => {
