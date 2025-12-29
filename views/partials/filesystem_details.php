@@ -116,19 +116,24 @@ foreach ($storageData as $item) {
 						<div class="fs-actions">
 							<!-- LINK TO EXISTING ZABBIX GRAPH -->
 							<?php
-							// Build graph URL for this filesystem
-							// First, we need to get the item ID for this mount point
-							$graphUrl = "zabbix.php?action=charts.view&filter_hostids%5B%5D=" . $hostId;
+							// Use current analysis period
+							$days = isset($filter['time_range']) ? $filter['time_range'] : 30;
+							$hostIdEscaped = urlencode($hostId);
+							$mountEscaped = urlencode($fs['mount']);
+							
+							$graphUrl = sprintf(
+								'zabbix.php?from=now-%dd&to=now&action=charts.view&filter_hostids%%5B%%5D=%s&filter_name=Disk+space+usage%%28%%25%%29+on+%s&filter_show=1&filter_set=1',
+								$days,
+								$hostIdEscaped,
+								$mountEscaped
+							);
 							?>
-							<a href="<?= $graphUrl ?>"
+							<a href="<?= htmlspecialchars($graphUrl) ?>"
 							class="btn-chart btn-icon"
 							title="<?= _('View growth chart in Zabbix') ?>"
-							target="_blank"
-							data-hostid="<?= $hostId ?>"
-							data-mount="<?= htmlspecialchars($fs['mount']) ?>">
+							target="_blank">
 								📈
-							</a>
-							
+							</a>							
 							<?php if (!empty($fs['seasonal_pattern'])): ?>
 								<button type="button" class="btn-pattern btn-icon"
 										title="<?= _('View seasonal pattern') ?>"
