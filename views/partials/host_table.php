@@ -307,8 +307,6 @@
                     <td>
                         <span class="fs-count"><?= $host['fs_count'] ?></span>
                     </td>
-                    <td>
-                    </td>
                 </tr>
                 <?php endforeach; ?>
                 
