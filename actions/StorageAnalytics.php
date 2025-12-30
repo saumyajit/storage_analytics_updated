@@ -16,7 +16,7 @@ class StorageAnalytics extends CController {
             'hostids'           => 'array_id',
             'groupids'          => 'array_id',
             'host'              => 'string',
-            'time_range'        => 'in 7,14,30,90,180,365',
+            'time_range'        => 'in 7,15,30,45,60,90',
             'prediction_method' => 'in simple,seasonal,holt_winters,ensemble',
             'warning_threshold' => 'ge 0|le 100',
             'critical_threshold'=> 'ge 0|le 100',
@@ -650,11 +650,11 @@ class StorageAnalytics extends CController {
 			'hosts' => [],
 			'time_ranges' => [
 				7 => _('Last 7 days'),
-				14 => _('Last 14 days'),
+				15 => _('Last 15 days'),
 				30 => _('Last 30 days'),
-				90 => _('Last 90 days'),
-				180 => _('Last 180 days'),
-				365 => _('Last year')
+				60 => _('Last 45 days'),
+				45 => _('Last 60 days'),
+				90 => _('Last 90 days')
 			],
 			'prediction_methods' => [
 				'simple' => _('Simple Linear'),
