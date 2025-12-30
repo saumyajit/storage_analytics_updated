@@ -329,7 +329,7 @@ class StorageAnalytics extends CController {
 				'history'   => 0,              // numeric float (pused is numeric)
 				'time_from' => $timeFrom,
 				'sortfield' => ['itemid', 'clock'],
-				'limit'     => 1000
+				'limit'     => 13000
 			]);
 	
 			// Group history by item ID
