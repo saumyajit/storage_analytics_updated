@@ -943,4 +943,52 @@
 .refreshing .summary-card {
     animation: pulse 1.5s infinite;
 }
+
+.filter-toggle-checkbox {
+    display: none; /* Hidden checkbox */
+}
+
+.filter-toggle-checkbox:checked + .btn-filter-toggle .toggle-icon::before {
+    content: "▲"; /* Collapse icon */
+}
+
+.filter-toggle-checkbox:checked ~ .filter-panel {
+    display: block !important;
+}
+
+.filter-toggle-checkbox:not(:checked) ~ .filter-panel {
+    display: none !important; /* Force hide */
+}
+
+.btn-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-bottom: 10px;
+    position: relative;
+    z-index: 10;
+}
+
+.filter-panel {
+    display: none; /* Default hidden */
+    margin-top: 10px;
+    padding: 20px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Ensure it stays open even after page refresh with filterenabled=1 */
+body:has(#filter-toggle:checked) .filter-panel {
+    display: block !important;
+}
+
 </style>
