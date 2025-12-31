@@ -16,9 +16,6 @@ class StorageAnalytics {
     }
     
     init() {
-        // Filter panel toggle
-        this.initFilterPanel();
-        
         // View toggle (Host/Filesystem)
         this.initViewToggle();
         
@@ -36,38 +33,6 @@ class StorageAnalytics {
         
         // Initialize any tooltips or enhancements
         this.enhanceUI();
-    }
-    
-    initFilterPanel() {
-        const toggleBtn = document.getElementById('filter-toggle');
-        const panel = document.getElementById('filter-panel');
-        const advancedToggle = document.getElementById('toggle-advanced');
-        const advancedPanel = document.getElementById('advanced-filters');
-        
-        if (toggleBtn && panel) {
-            toggleBtn.addEventListener('click', () => {
-                const isVisible = panel.style.display !== 'none';
-                panel.style.display = isVisible ? 'none' : 'block';
-                toggleBtn.querySelector('.toggle-icon').textContent = isVisible ? '▼' : '▲';
-            });
-        }
-        
-        if (advancedToggle && advancedPanel) {
-            advancedToggle.addEventListener('click', () => {
-                const isVisible = advancedPanel.style.display !== 'none';
-                advancedPanel.style.display = isVisible ? 'none' : 'block';
-                advancedToggle.querySelector('.toggle-icon').textContent = isVisible ? '▶' : '▼';
-            });
-        }
-        
-        // Clear filters button
-        const clearBtn = document.getElementById('clear-filters');
-        if (clearBtn) {
-            clearBtn.addEventListener('click', () => {
-                document.getElementById('filter-form').reset();
-                document.getElementById('filter-form').submit();
-            });
-        }
     }
     
     initViewToggle() {
