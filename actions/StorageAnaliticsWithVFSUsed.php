@@ -326,7 +326,7 @@ class StorageAnalytics extends CController {
                 'history' => 3,
                 'time_from' => $timeFrom,
                 'sortfield' => ['itemid', 'clock'],
-                'limit' => 13000
+                'limit' => 1000
             ]);
             
             // Group history by item ID
