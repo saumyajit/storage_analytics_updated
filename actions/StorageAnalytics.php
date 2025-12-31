@@ -209,8 +209,7 @@ class StorageAnalytics extends CController {
 		$exclude_mounts = [
 			'/tmp',
 			'/var/tmp',
-			'P:',
-			'Q:'
+			'P:'
 			// add more as needed
 		];
 	
