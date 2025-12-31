@@ -21,12 +21,14 @@ $customerGroups = array_filter($initialGroups, function($group) {
 ?>
 
 <div class="filter-section">
-    <button type="button" class="btn-filter-toggle btn-alt" id="filter-toggle">
-        <span class="toggle-icon">▼</span> <?= _('Filters') ?>
-        <?php if ($filter['filter_enabled']): ?>
-            <span class="filter-badge"><?= _('Active') ?></span>
+    <input type="checkbox" id="filter-toggle" class="filter-toggle-checkbox"
+           <?php echo (isset($filter) && $filter['filter_enabled']) ? 'checked' : ''; ?>>
+    <label for="filter-toggle" class="btn-filter-toggle btn-alt">
+        <span class="toggle-icon">▼</span> Filters
+        <?php if (isset($filter) && $filter['filter_enabled']): ?>
+            <span class="filter-badge">Active</span>
         <?php endif; ?>
-    </button>
+    </label>
     
     <div class="filter-panel" id="filter-panel" style="<?= $filter['filter_enabled'] ? '' : 'display: none;' ?>">
         <form id="filter-form" method="get" action="zabbix.php">
