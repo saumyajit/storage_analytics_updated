@@ -16,7 +16,7 @@ class StorageAnalytics extends CController {
             'hostids'           => 'array_id',
             'groupids'          => 'array_id',
             'host'              => 'string',
-            'time_range'        => 'in 7,15,30,45,60,90',
+            'time_range'        => 'in 1,7,15,30,45,60,90',
             'prediction_method' => 'in simple,seasonal,holt_winters,ensemble',
             'warning_threshold' => 'ge 0|le 100',
             'critical_threshold'=> 'ge 0|le 100',
@@ -55,7 +55,7 @@ class StorageAnalytics extends CController {
             'hostids'           => $this->getInput('hostids', []),
             'groupids'          => $this->getInput('groupids', []),
             'host'              => $this->getInput('host', ''),
-            'time_range'        => $this->getInput('time_range', 30),
+            'time_range'        => $this->getInput('time_range', 1),
             'prediction_method' => $this->getInput('prediction_method', 'seasonal'),
             'warning_threshold' => $this->getInput('warning_threshold', 80),
             'critical_threshold'=> $this->getInput('critical_threshold', 90),
@@ -329,7 +329,7 @@ class StorageAnalytics extends CController {
 				'history'   => 0,              // numeric float (pused is numeric)
 				'time_from' => $timeFrom,
 				'sortfield' => ['itemid', 'clock'],
-				'limit'     => 1000
+				'limit'     => 13000
 			]);
 	
 			// Group history by item ID
@@ -649,6 +649,7 @@ class StorageAnalytics extends CController {
 			'hostgroups' => [],
 			'hosts' => [],
 			'time_ranges' => [
+				1 => _('Last 1 day'),
 				7 => _('Last 7 days'),
 				15 => _('Last 15 days'),
 				30 => _('Last 30 days'),
