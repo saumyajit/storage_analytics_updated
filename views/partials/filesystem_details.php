@@ -57,6 +57,7 @@ foreach ($storageData as $item) {
                     <th><?= _('Free') ?></th>
                     <th><?= _('Usage %') ?></th>
                     <th><?= _('Daily Growth') ?></th>
+                    <th><?= _('Total Growth') ?></th>
                     <th><?= _('Days Until Full') ?></th>
                     <th><?= _('Trend') ?></th>
                     <th><?= _('Graphs') ?></th>
@@ -86,6 +87,7 @@ foreach ($storageData as $item) {
                             </div>
                         </div>
                     </td>
+					<td><?= $fs['total_growth'] ?></td>
                     <td>
                         <?php if ($fs['daily_growth_raw'] > 0): ?>
                             <div class="growth-cell">
