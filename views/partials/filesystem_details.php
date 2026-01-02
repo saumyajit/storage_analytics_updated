@@ -86,8 +86,7 @@ foreach ($storageData as $item) {
                                 <div class="usage-fill" style="width: <?= min($fs['usage_pct'], 100) ?>%"></div>
                             </div>
                         </div>
-                    </td>
-					<td><?= $fs['total_growth'] ?></td>
+                    </td>					
                     <td>
                         <?php if ($fs['daily_growth_raw'] > 0): ?>
                             <div class="growth-cell">
@@ -102,6 +101,7 @@ foreach ($storageData as $item) {
                             <span class="growth-neutral"><?= _('Stable') ?></span>
                         <?php endif; ?>
                     </td>
+					<td><?= $fs['total_growth'] ?></td>
                     <td>
                         <span class="days-cell <?= $fs['status'] ?>">
                             <?= $fs['days_until_full'] ?>
