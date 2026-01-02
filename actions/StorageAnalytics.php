@@ -354,6 +354,13 @@ class StorageAnalytics extends CController {
 					$timeDiffDays = max(1, ($last['clock'] - $first['clock']) / 86400);
 	
 					$dailyGrowth = $valueDiff / $timeDiffDays;
+
+					// Actual growth over time range
+					$storageData[$dataIdx]['total_growth_raw'] = $valueDiff;
+					$storageData[$dataIdx]['total_growth'] =
+						$valueDiff > 0
+							? $this->formatBytes($valueDiff)
+							: _('Stable');
 	
 					// Apply to storage data
 					$storageData[$dataIdx]['daily_growth_raw'] = $dailyGrowth;
@@ -387,6 +394,7 @@ class StorageAnalytics extends CController {
 			if (!isset($item['daily_growth_raw'])) {
 				$item['daily_growth_raw'] = 0;
 				$item['daily_growth']     = _('Stable');
+				$item['total_growth']     = _('Stable');
 				$item['days_until_full']  = _('No growth');
 				$item['growth_trend']     = 'stable';
 				$item['confidence']       = 0;
@@ -823,6 +831,7 @@ class StorageAnalytics extends CController {
 			'Free Space',
 			'Usage %',
 			'Daily Growth',
+			'Total Growth',
 			'Days Until Full',
 			'Growth Trend',
 			'Confidence %',
@@ -843,6 +852,7 @@ class StorageAnalytics extends CController {
 				$freeSpace,
 				($item['usage_pct'] ?? 0) . '%',
 				$item['daily_growth'] ?? '0 B/day',
+				$item['total_growth'] ?? '0 B',
 				$item['days_until_full'] ?? _('No growth'),
 				$item['growth_trend'] ?? 'stable',
 				$item['confidence'] ?? 0,
@@ -1075,6 +1085,7 @@ class StorageAnalytics extends CController {
 						<th><?= _('Free') ?></th>
 						<th><?= _('Usage %') ?></th>
 						<th><?= _('Daily Growth') ?></th>
+						<th><?= _('Total Growth') ?></th>
 						<th><?= _('Days Until Full') ?></th>
 						<th><?= _('Trend') ?></th>
 						<th><?= _('Status') ?></th>
@@ -1093,6 +1104,7 @@ class StorageAnalytics extends CController {
 						<td><?= $freeSpace ?></td>
 						<td><?= $item['usage_pct'] ?? 0 ?>%</td>
 						<td><?= $item['daily_growth'] ?? '0 B/day' ?></td>
+						<td><?= $item['total_growth'] ?? '0 B' ?></td>
 						<td><?= $item['days_until_full'] ?? _('No growth') ?></td>
 						<td>
 							<?php if (isset($item['growth_trend'])): ?>
