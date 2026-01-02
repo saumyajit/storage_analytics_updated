@@ -463,6 +463,52 @@ $customerGroups = array_filter($initialGroups, function($group) {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* Center & bold filter group headers */
+.filter-panel .filter-group > label {
+    text-align: center;
+    font-weight: 700;
+	font-size: 16px;
+}
+
+
+/* Vertically center select text */
+.select {
+    height: 36px;
+    line-height: 36px;
+}
+
+/* Center button text vertically */
+.btn-apply,
+.btn-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Center threshold rows */
+.threshold-input {
+    display: flex;
+    align-items: center;
+}
+
+/* Center auto-refresh controls */
+.refresh-controls {
+    align-items: center;
+}
+
+
+/* Make filter headers bold */
+.filter-group > label {
+    font-weight: 700;
+}
+
+/* Center action buttons */
+.filter-actions {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
 </style>
 
 <script>
