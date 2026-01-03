@@ -998,14 +998,19 @@ body:has(#filter-toggle:checked) .filter-panel {
 .stat-link.warning { color: #f39c12; }
 .stat-link.critical { color: #e74c3c; }
 .stat-link:hover { text-decoration: underline; }
-
-/* Status badge with clear button */
 .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap
+    position: relative;
+    display: inline-block;
+    margin-left: 10px;
+}
 
-.status-badge:hover .clear-status {
-    opacity
+.clear-status {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 14px;
+    margin-left: 6px;
+    cursor: pointer;
+    line-height
 
 </style>
