@@ -7,6 +7,14 @@
 <div class="table-section">
     <div class="table-header">
         <h2><?= _('Storage Analysis by Host') ?></h2>
+		
+		 <?php if (!empty($filter['host_status'])): ?>
+			<span class="status-badge <?= $filter['host_status'] ?>">
+				<?= ucfirst($filter['host_status']) ?> Filter
+				<button class="clear-status" onclick="clearStatusFilter()" title="<?= _('Clear') ?>">×</button>
+			</span>
+		<?php endif; ?>
+	
         <div class="table-actions">
             <div class="view-toggle">
                 <button type="button" class="btn-view-toggle active" data-view="host"><?= _('Host View') ?></button>
@@ -498,4 +506,11 @@ document.addEventListener('DOMContentLoaded', function() {
         modalBody.innerHTML = html;
     }
 });
+
+function clearStatusFilter() {
+    // Remove ONLY host_status from URL, keep everything else
+    const url = new URL(window.location.href);
+    url.searchParams.delete('host_status');
+    window.location.href = url.toString();
+}
 </script>
