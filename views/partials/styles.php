@@ -991,4 +991,21 @@ body:has(#filter-toggle:checked) .filter-panel {
     display: block !important;
 }
 
+.stat-link {
+    text-decoration: none;
+    font-weight: bold;
+}
+.stat-link.warning { color: #f39c12; }
+.stat-link.critical { color: #e74c3c; }
+.stat-link:hover { text-decoration: underline; }
+
+/* Status badge with clear button */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap
+
+.status-badge:hover .clear-status {
+    opacity
+
 </style>
