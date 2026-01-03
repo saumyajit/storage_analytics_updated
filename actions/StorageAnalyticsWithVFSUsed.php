@@ -840,7 +840,6 @@ class StorageAnalytics extends CController {
 		fputcsv($output, ['EXPORT METADATA']);
 		fputcsv($output, ['Total Records:', count($storageData)]);
 		fputcsv($output, ['Export Format:', 'CSV']);
-		fputcsv($output, ['Module Version:', 'Storage Analytics Pro 1.0']);
 		
 		fclose($output);
 		exit;
