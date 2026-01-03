@@ -24,25 +24,27 @@
         </div>
     </div>
     
-    <!-- Used Storage Card -->
-    <div class="summary-card card-used">
-        <div class="card-icon">📊</div>
-        <div class="card-content">
-            <h3><?= _('Used Storage') ?></h3>
-            <p class="card-subtitle"><?= _('of total capacity') ?></p>
-            <div class="card-value"><?= $summary['total_used'] ?></div>
-            <div class="card-stats">
-                <div class="stat-item">
-                    <span class="stat-label warning"><?= _('Warning') ?>:</span>
-                    <span class="stat-value"><?= $summary['warning_count'] ?></span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label critical"><?= _('Critical') ?>:</span>
-                    <span class="stat-value"><?= $summary['critical_count'] ?></span>
-                </div>
-            </div>
-        </div>
-    </div>
+	<!-- Used Storage Card -->
+	<div class="summary-card card-used">
+		<div class="card-icon">📊</div>
+		<div class="card-content">
+			<h3><?= _('Used Storage') ?></h3>
+			<p class="card-subtitle"><?= _('of total capacity') ?></p>
+			<div class="card-value"><?= $summary['total_used'] ?></div>
+			<div class="card-stats">
+				<div class="stat-item">
+					<span class="stat-label warning"><?= _('Warning') ?>:</span>
+					<a href="?action=storage.analytics&host_status=warning<?= $buildQueryString($filter, ['host_status']) ?>" 
+					class="stat-value stat-link warning"><?= $summary['warning_count'] ?></a>
+				</div>
+				<div class="stat-item">
+					<span class="stat-label critical"><?= _('Critical') ?>:</span>
+					<a href="?action=storage.analytics&host_status=critical<?= $buildQueryString($filter, ['host_status']) ?>" 
+					class="stat-value stat-link critical"><?= $summary['critical_count'] ?></a>
+				</div>
+			</div>
+		</div>
+	</div>
     
     <!-- Growth Rate Card -->
     <div class="summary-card card-growth">
