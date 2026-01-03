@@ -38,6 +38,23 @@ foreach ($storageData as $item) {
     }
     $hostsGrouped[$hostId]['filesystems'][] = $item;
 }
+
+// STATUS FILTER for Filesystem View - Filter breached filesystems
+$fsStatusFilter = $filter['host_status'] ?? '';
+if ($fsStatusFilter !== '') {
+    $hostsGrouped = array_map(function($hostData) use ($fsStatusFilter) {
+        $hostData['filesystems'] = array_filter($hostData['filesystems'], function($fs) use ($fsStatusFilter) {
+            $fsStatus = $fs['status'] ?? 'ok';
+            return $fsStatus === $fsStatusFilter;
+        });
+        return $hostData;
+    }, $hostsGrouped);
+    
+    // Remove empty hosts
+    $hostsGrouped = array_filter($hostsGrouped, function($hostData) {
+        return count($hostData['filesystems']) > 0;
+    });
+}
 ?>
 
 <div class="filesystem-view-content">
