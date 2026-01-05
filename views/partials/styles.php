@@ -1013,4 +1013,21 @@ body:has(#filter-toggle:checked) .filter-panel {
     cursor: pointer;
     line-height
 
+/* FIX: prevent footer overlay in filesystem details */
+.filesystem-view-content {
+    padding-bottom: 60px;
+}
+
+/* FIX: correct sticky headers */
+.fs-details-table th {
+    position: sticky;
+    top: 48px;
+    z-index: 2;
+}
+
+/* Disable sticky on generic tables */
+.list-table th {
+    position: static;
+}
+
 </style>
