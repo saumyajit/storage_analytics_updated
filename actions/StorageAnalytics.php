@@ -16,7 +16,7 @@ class StorageAnalytics extends CController {
             'hostids'           => 'array_id',
             'groupids'          => 'array_id',
             'host'              => 'string',
-			'host_status' 		=> 'in warning,critical',
+			'host_status' 		=> ['type' => API_INT32, 'in' => implode(',', [HOST_STATUS_MONITORED, HOST_STATUS_NOT_MONITORED])],
             'time_range'        => 'in 1,7,15,30,45,60,90',
             'prediction_method' => 'in simple,seasonal,holt_winters,ensemble',
             'warning_threshold' => 'ge 0|le 100',
